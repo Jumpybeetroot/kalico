@@ -12,6 +12,7 @@
 #include "sched.h" // DECL_SHUTDOWN
 #include "spi_software.h" // spi_software_setup
 #include "spicmds.h" // spidev_transfer
+#include "board/misc.h" // timer_read_time, timer_from_us
 
 struct spidev_s {
     union {
@@ -115,8 +116,14 @@ spidev_transfer(struct spidev_s *spi, uint8_t receive_data
     else
         spi_prepare(spi->spi_config);
 
-    if (flags & SF_HAVE_PIN)
+    if (flags & SF_HAVE_PIN) {
         gpio_out_write(spi->pin, !!(flags & SF_CS_ACTIVE_HIGH));
+        
+        // 500ns delay for high-speed SPI requirements (e.g. TMC4671)
+        uint32_t end = timer_read_time() + (timer_from_us(1) / 2);
+        while (timer_is_before(timer_read_time(), end))
+            ;
+    }
 
     if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
         spi_software_transfer(spi->spi_software, receive_data, data_len, data);
