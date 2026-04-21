@@ -47,13 +47,11 @@ get_chip_fd(uint8_t chipId)
     snprintf(chipFilename, sizeof(chipFilename), "/dev/gpiochip%u", chipId);
     int ret = access(chipFilename, F_OK);
     if (ret < 0) {
-        report_errno("gpio access", ret);
-        shutdown("GPIO chip device not found");
+        return -1;
     }
     int fd = open(chipFilename, O_RDWR | O_CLOEXEC);
     if (fd < 0) {
-        report_errno("gpio open", fd);
-        shutdown("Unable to open GPIO chip device");
+        return -1;
     }
     gpio_chip_fd[chipId] = fd;
     int i;
@@ -97,10 +95,10 @@ gpio_out_reset(struct gpio_out g, uint8_t val)
     req.default_values[0] = !!val;
     strncpy(req.consumer_label, GPIO_CONSUMER, sizeof(req.consumer_label) - 1);
     int fd = get_chip_fd(g.line->chipid);
+    if (fd < 0) return;
     int ret = ioctl(fd, GPIO_GET_LINEHANDLE_IOCTL, &req);
     if (ret < 0) {
-        report_errno("gpio_out_reset get line", ret);
-        shutdown("Unable to open out GPIO chip line");
+        return;
     }
     set_close_on_exec(req.fd);
     g.line->fd = req.fd;
@@ -110,6 +108,7 @@ gpio_out_reset(struct gpio_out g, uint8_t val)
 void
 gpio_out_write(struct gpio_out g, uint8_t val)
 {
+    if (g.line->fd < 0) return;
     struct gpiohandle_data data;
     memset(&data, 0, sizeof(data));
     data.values[0] = !!val;
@@ -158,10 +157,10 @@ gpio_in_reset(struct gpio_in g, int8_t pull_up)
     req.lineoffsets[0] = g.line->offset;
     strncpy(req.consumer_label, GPIO_CONSUMER, sizeof(req.consumer_label) - 1);
     int fd = get_chip_fd(g.line->chipid);
+    if (fd < 0) return;
     int ret = ioctl(fd, GPIO_GET_LINEHANDLE_IOCTL, &req);
     if (ret < 0) {
-        report_errno("gpio_in_reset get line", ret);
-        shutdown("Unable to open in GPIO chip line");
+        return;
     }
     set_close_on_exec(req.fd);
     g.line->fd = req.fd;
@@ -170,6 +169,7 @@ gpio_in_reset(struct gpio_in g, int8_t pull_up)
 uint8_t
 gpio_in_read(struct gpio_in g)
 {
+    if (g.line->fd < 0) return 0;
     struct gpiohandle_data data;
     memset(&data, 0, sizeof(data));
     ioctl(g.line->fd, GPIOHANDLE_GET_LINE_VALUES_IOCTL, &data);
