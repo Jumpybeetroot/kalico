@@ -7,7 +7,11 @@ class TMC4671Sync:
         self.name = config.get_name().split(' ')[1]
         self.leader_name = config.get("leader")
         self.follower_name = config.get("follower")
-        self.sync_rate = config.getint("sync_rate", 2000, minval=1)
+        
+        if self.leader_name == self.follower_name:
+            raise config.error(f"[tmc4671_sync {self.name}]: leader and follower must be different drivers")
+            
+        self.sync_rate = config.getint("sync_rate", 2000, minval=100, maxval=10000)
         self.divergence_threshold = config.getint("divergence_threshold", 500, minval=0)
         self.divergence_time = config.getfloat("divergence_time", 0.05, minval=0.0)
         
@@ -16,6 +20,7 @@ class TMC4671Sync:
         
         self.printer.register_event_handler("klippy:mcu_identify", self.handle_mcu_identify)
         self.printer.register_event_handler("klippy:connect", self.handle_connect)
+        self.printer.register_event_handler("klippy:disconnect", self.handle_disconnect)
         self.printer.lookup_object('gcode').register_command(
             f"DUMP_SYNC_{self.name.upper()}", self.cmd_DUMP_TMC4671_SYNC,
             desc=f"Dump TMC4671 Leader/Follower sync stats for {self.name}"
@@ -93,6 +98,18 @@ class TMC4671Sync:
         rest_ticks = mcu.seconds_to_clock(1.0 / self.sync_rate)
         self.cmd_sync_start.send([self.sync_oid, clock, rest_ticks])
 
+    def handle_disconnect(self):
+        if hasattr(self, 'cmd_sync_stop'):
+            try:
+                self.cmd_sync_stop.send([self.sync_oid])
+            except:
+                pass
+        if hasattr(self.follower, "mcu_tmc"):
+            try:
+                self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
+            except:
+                pass
+
     def cmd_DUMP_TMC4671_SYNC(self, gcmd):
         if not hasattr(self, 'cmd_sync_status'):
             gcmd.respond_info("TMC4671 Sync not fully initialized yet.")
@@ -118,6 +135,14 @@ class TMC4671Sync:
             gcmd.respond_info("TMC4671 Sync not fully initialized yet.")
             return
         self.cmd_sync_stop.send([self.sync_oid])
+        
+        # Force follower to zero torque after sync is stopped (backup to C-loop disarm)
+        if hasattr(self.follower, "mcu_tmc"):
+            try:
+                self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
+            except:
+                pass
+                
         gcmd.respond_info(f"TMC4671 Sync '{self.name}' stopped.")
 
     def cmd_SYNC_START(self, gcmd):
