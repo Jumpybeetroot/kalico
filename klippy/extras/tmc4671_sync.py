@@ -167,12 +167,12 @@ class TMC4671Sync:
         if hasattr(self, 'cmd_sync_stop'):
             try:
                 self.cmd_sync_stop.send([self.sync_oid])
-            except:
+            except Exception:
                 pass
         if hasattr(self.follower, "mcu_tmc"):
             try:
                 self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
-            except:
+            except Exception:
                 pass
 
     def cmd_DUMP_TMC4671_SYNC(self, gcmd):
@@ -205,7 +205,7 @@ class TMC4671Sync:
         if hasattr(self.follower, "mcu_tmc"):
             try:
                 self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
-            except:
+            except Exception:
                 pass
                 
         gcmd.respond_info(f"TMC4671 Sync '{self.name}' stopped.")
