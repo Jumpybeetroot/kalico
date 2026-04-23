@@ -1,0 +1,42 @@
+# Kalico TMC4671 AWD Synchronization
+
+## Overview
+The **Kalico TMC4671 AWD Synchronization** module is a high-performance, hardware-level extension for Klipper/Kalico, designed specifically for Ouroboros boards driving All-Wheel Drive (AWD) CoreXY and Cartesian 3D printers. 
+
+In traditional AWD setups, the host software (Klipper) must calculate and send identical step/torque commands to two separate motor drivers across a USB/CAN bus. Due to micro-timing differences, bus latency, and independent driver clock drifts, the two motors mechanically fighting each other is inevitable. This results in resonance, loss of torque, and increased heat.
+
+The **Kalico AWD Sync** module solves this by moving the synchronization off the host and down to the lowest possible level: the MCU hardware SPI bus.
+
+## How It Works: Rigid-Coupling Synchronization
+Instead of treating the AWD motors as two independent entities, this architecture establishes a strict **Leader-Follower (Master-Slave)** relationship directly on the MCU.
+
+1. **Host Configuration:** The Python host module (`tmc4671_sync.py`) links the two drivers together during initialization and commands the Follower to permanently enter purely closed-loop Torque mode (`MODE_MOTION = 1`).
+2. **C-Level Firmware Loop:** A dedicated hardware timer task (`tmc4671_sync_task`) runs in the background on the MCU at a high frequency (e.g., 2000Hz).
+3. **SPI Interception:** 
+   * The MCU reads the true, instantaneous `PID_TORQUE_FLUX_TARGET` (Register `0x64`) directly from the Leader driver's silicon.
+   * It immediately writes this identical 32-bit value to the Follower driver's `PID_TORQUE_FLUX_TARGET` register.
+
+By mirroring the exact target commands across the SPI bus in under a millisecond, the Follower acts as a mathematically perfect "slave amplifier." Both motors exert identical force simultaneously, acting as a single rigidly-coupled unit. This completely eliminates mechanical fighting and bypasses all host-to-MCU communication latency.
+
+## Key Technical Features
+
+### 1. SPI Split-Transfer Read Timing
+The TMC4671 datasheet enforces a strict hardware requirement: when running the SPI bus at high speeds (up to 8MHz), any SPI read operation requires a mandatory 500ns pause *immediately after* the 1-byte address is transmitted. 
+
+To satisfy this without stalling the rest of the MCU or slowing down generic SPI devices, Kalico implements a custom `spidev_transfer_tmc4671_read()` C function. It splits the transfer, injects a precise 500ns `timer_read_time()` delay after the address byte, and safely retrieves the remaining 4 bytes of telemetry.
+
+### 2. State-Transition Safety Clamps
+Because the sync loop runs continuously, there is a risk of mirroring glitched data if the Leader undergoes a state transition (e.g., during homing, configuration, or emergency stops). 
+
+To prevent the Follower from violently reacting to stale limits during transitions, the firmware safely intercepts the forward path. It performs a 5-microsecond lookahead to check the Leader's `MODE_RAMP_MODE_MOTION` (0x63) register. If the Leader is **not** actively in a closed-loop motion mode (Torque, Velocity, or Position), the C-loop forces the Follower's target torque and flux to exactly `0`, safely cutting all power.
+
+### 3. Asynchronous Telemetry & Host Controls
+The synchronization loop exposes full diagnostic telemetry to the Kalico host without blocking the real-time C loop:
+* **`DUMP_SYNC_<NAME>`**: Provides real-time metrics including cycle counts, overruns, the last forwarded target, and tracks both the recent `max_latency` and the `absolute_max_latency` (peak jitter) since boot.
+* **`SYNC_STOP_<NAME>` / `SYNC_START_<NAME>`**: Dynamic G-Code commands allowing macros to pause the hardware synchronization cleanly during complex homing maneuvers or sensorless probing.
+
+## Project Structure
+* **`klippy/extras/tmc4671_sync.py`**: The Klipper Python module responsible for parsing the `printer.cfg`, validating OIDs, and scheduling the C-level sync task.
+* **`src/tmc4671_sync.c`**: The MCU C-module containing the high-frequency hardware timer and SPI mirroring logic.
+* **`src/spicmds.c` / `spicmds.h`**: Modified Klipper hardware SPI drivers containing the 500ns split-transfer implementation for TMC4671 reads.
+* **`klippy/extras/tmc4671.py`**: The core TMC4671 host driver, updated with SPI accessors and simulator bypasses for development.
