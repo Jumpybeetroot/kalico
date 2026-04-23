@@ -8,6 +8,8 @@ class TMC4671Sync:
         self.leader_name = config.get("leader")
         self.follower_name = config.get("follower")
         self.sync_rate = config.getint("sync_rate", 2000, minval=1)
+        self.divergence_threshold = config.getint("divergence_threshold", 100, minval=0)
+        self.divergence_time = config.getfloat("divergence_time", 0.05, minval=0.0)
         
         self.leader = None
         self.follower = None
@@ -55,9 +57,11 @@ class TMC4671Sync:
         
         # Allocate our custom synced spi oid
         self.sync_oid = mcu.create_oid()
+        div_ticks = int(self.divergence_time * self.sync_rate)
         mcu.add_config_cmd(
             f"config_tmc4671_sync oid={self.sync_oid} "
-            f"leader_spi_oid={leader_spi_oid} follower_spi_oid={follower_spi_oid}"
+            f"leader_spi_oid={leader_spi_oid} follower_spi_oid={follower_spi_oid} "
+            f"div_thresh={self.divergence_threshold} div_ticks={div_ticks}"
         )
         
         # Command them to start

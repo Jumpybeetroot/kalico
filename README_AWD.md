@@ -32,7 +32,14 @@ Because the sync loop runs continuously, there is a risk of mirroring glitched d
 
 To prevent the Follower from violently reacting to stale limits during transitions, the firmware safely intercepts the forward path. It executes a sequential pre-read of the Leader's `MODE_RAMP_MODE_MOTION` (0x63) register immediately before fetching the target. If the Leader is **not** actively in a closed-loop motion mode (Torque, Velocity, or Position), the C-loop forces the Follower's target torque and flux to exactly `0`, safely cutting all power.
 
-### 3. Asynchronous Telemetry & Host Controls
+### 3. Hardware Torque Divergence Detection
+If the Follower loses mechanical tracking (e.g., a phase wire disconnects, or the encoder slips), the Leader will dynamically ramp up its positional PID torque output to compensate, dragging the disabled Follower. To prevent this catastrophic failure, the C-loop constantly compares `PID_TORQUE_FLUX_ACTUAL` (0x69) between both drivers. If the instantaneous physical torque diverges by more than the threshold for a set duration, the MCU will instantly throw a hardware `AWD Torque Divergence Fault` shutdown.
+
+**Config Parameters:**
+* `divergence_threshold`: The allowable mismatch in raw ADC current units before flagging a fault (Default: `100`).
+* `divergence_time`: The duration the mismatch must persist continuously before triggering the MCU shutdown (Default: `0.05` seconds).
+
+### 4. Asynchronous Telemetry & Host Controls
 The synchronization loop exposes full diagnostic telemetry to the Kalico host without blocking the real-time C loop:
 * **`DUMP_SYNC_<NAME>`**: Provides real-time metrics including cycle counts, overruns, the last forwarded target, and tracks both the recent `max_latency` and the `absolute_max_latency` (peak jitter) since boot.
 * **`SYNC_STOP_<NAME>` / `SYNC_START_<NAME>`**: Dynamic G-Code commands allowing macros to pause the hardware synchronization cleanly during complex homing maneuvers or sensorless probing.

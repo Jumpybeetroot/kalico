@@ -23,6 +23,9 @@ struct tmc4671_sync_s {
     uint32_t max_latency;
     uint32_t absolute_max_latency;
     uint32_t last_leader_value;
+    uint16_t divergence_threshold;
+    uint16_t max_divergence_ticks;
+    uint16_t current_divergence_ticks;
 };
 
 enum {
@@ -51,9 +54,12 @@ void command_config_tmc4671_sync(uint32_t *args) {
     sync->timer.func = tmc4671_sync_event;
     sync->leader_spi = spidev_oid_lookup(args[1]);
     sync->follower_spi = spidev_oid_lookup(args[2]);
+    sync->divergence_threshold = args[3];
+    sync->max_divergence_ticks = args[4];
+    sync->current_divergence_ticks = 0;
 }
 DECL_COMMAND(command_config_tmc4671_sync,
-             "config_tmc4671_sync oid=%c leader_spi_oid=%c follower_spi_oid=%c");
+             "config_tmc4671_sync oid=%c leader_spi_oid=%c follower_spi_oid=%c div_thresh=%hu div_ticks=%hu");
 
 void command_tmc4671_sync_start(uint32_t *args) {
     struct tmc4671_sync_s *sync = oid_lookup(args[0], command_config_tmc4671_sync);
@@ -127,6 +133,35 @@ void tmc4671_sync_task(void) {
         // The read_msg buffer now contains what we want to write in indices 1..4.
         uint8_t write_msg[5] = { 0xE4, read_msg[1], read_msg[2], read_msg[3], read_msg[4] };
         spidev_transfer(sync->follower_spi, 0, 5, write_msg);
+
+        // Divergence detection: read PID_TORQUE_FLUX_ACTUAL (0x69)
+        uint8_t act_leader_msg[5] = { 0x69, 0x00, 0x00, 0x00, 0x00 };
+        spidev_transfer_tmc4671_read(sync->leader_spi, act_leader_msg);
+        
+        uint8_t act_follower_msg[5] = { 0x69, 0x00, 0x00, 0x00, 0x00 };
+        spidev_transfer_tmc4671_read(sync->follower_spi, act_follower_msg);
+        
+        uint32_t l_act_val, f_act_val;
+        memcpy(&l_act_val, &act_leader_msg[1], 4);
+        memcpy(&f_act_val, &act_follower_msg[1], 4);
+        
+        // TORQUE_ACTUAL is upper 16 bits, FLUX_ACTUAL is lower 16 bits.
+        int16_t l_torque = (int16_t)(be32_to_cpu(l_act_val) >> 16);
+        int16_t f_torque = (int16_t)(be32_to_cpu(f_act_val) >> 16);
+        
+        int32_t diff = l_torque - f_torque;
+        if (diff < 0) {
+            diff = -diff;
+        }
+        
+        if (diff > sync->divergence_threshold) {
+            sync->current_divergence_ticks++;
+            if (sync->current_divergence_ticks >= sync->max_divergence_ticks) {
+                try_shutdown("AWD Torque Divergence Fault");
+            }
+        } else {
+            sync->current_divergence_ticks = 0;
+        }
     }
 }
 DECL_TASK(tmc4671_sync_task);
