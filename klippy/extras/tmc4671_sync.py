@@ -86,8 +86,8 @@ class TMC4671Sync:
             try:
                 # 1. Zero out the follower's target first to prevent sudden jerks
                 self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
-                # 2. Put follower into torque mode (MODE_MOTION = 1)
-                self.follower.mcu_tmc.set_register("MODE_RAMP_MODE_MOTION", 1)
+                # 2. Put follower into torque mode (MODE_MOTION = 1) without clobbering PID_TYPE or FF bits
+                self.follower.mcu_tmc.write_field("MODE_MOTION", 1)
             except self.printer.command_error as e:
                 logging.error(f"TMC4671 Sync: Failed to set follower '{self.follower_name}' to torque mode! Sync will fail.")
                 raise e
