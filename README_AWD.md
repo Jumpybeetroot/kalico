@@ -46,7 +46,7 @@ The hardware implementation relies on Klipper's per-transaction SPI locking. Thi
 
 ### 5. Asynchronous Telemetry & Host Controls
 The synchronization loop exposes full diagnostic telemetry to the Kalico host without blocking the real-time C loop:
-* **`DUMP_SYNC_<NAME>`**: Provides real-time metrics including cycle counts, overruns, the last forwarded target, and tracks both the recent `max_latency` and the `absolute_max_latency` (peak jitter) since boot.
+* **`DUMP_SYNC_<NAME>`**: Provides real-time metrics including cycle counts, overruns, the last forwarded target, and tracks both the recent `max_latency` and the `absolute_max_latency` (peak jitter) since boot. *(Note: `cycle_count` is a 32-bit integer and will wrap back to zero after approximately 24.9 days of continuous sync operation at 2kHz. This is normal and resets cleanly on a new `SYNC_START`.)*
 * **`SYNC_STOP_<NAME>` / `SYNC_START_<NAME>`**: Dynamic G-Code commands allowing macros to pause the hardware synchronization cleanly during complex homing maneuvers or sensorless probing.
 
 ## Project Structure
