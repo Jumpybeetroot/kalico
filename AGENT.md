@@ -20,9 +20,9 @@ The AWD Sync system is split across the Python host and the C-level MCU firmware
 ## 3. Mathematical & Hardware "Gotchas" (CRITICAL)
 
 ### A. The Torque Register Mirroring Rule
-Do NOT attempt to sync the target registers (`PID_TORQUE_TARGET`). 
-* **The Rule:** The sync loop MUST read the `PID_TORQUE_ACTUAL` value (Register `0x71`) from the Leader, and write it directly to the `PID_TORQUE_OFFSET` register (Register `0x66`) of the Follower. 
-* **Why:** The Follower driver should operate with its own PID loops disabled (or zeroed), acting purely as a slave amplifier that mathematically adds the Leader's actual torque onto its baseline via the offset register.
+For matched motors and drivers, sync the target registers (`PID_TORQUE_FLUX_TARGET`).
+* **The Rule:** The sync loop MUST read the `PID_TORQUE_FLUX_TARGET` value (Register `0x64`) from the Leader, and write it directly to the `PID_TORQUE_FLUX_TARGET` register (Register `0x64`) of the Follower.
+* **Why:** Because the Leader and Follower motors and drivers are perfectly matched, copying the exact **Target** command bypasses any momentary noise or filtering artifacts that the Leader's own internal current PID loops might be experiencing. This results in a perfectly synchronized driving force without compounding signal noise.
 
 ### B. SPI Bus Delay
 * **The Rule:** The SPI synchronization loop in the MCU contains a mandatory **500ns delay**. 
