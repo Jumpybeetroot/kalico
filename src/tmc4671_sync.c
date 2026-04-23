@@ -177,17 +177,6 @@ void tmc4671_sync_task(void) {
         uint8_t write_msg[5] = { 0xE4, read_msg[1], read_msg[2], read_msg[3], read_msg[4] };
         spidev_transfer(sync->follower_spi, 0, 5, write_msg);
 
-        // Record true latency including SPI transactions
-        uint32_t now = timer_read_time();
-        uint32_t latency = now - scheduled;
-        if (latency > sync->max_latency) {
-            sync->max_latency = latency;
-        }
-        if (latency > sync->absolute_max_latency) {
-            sync->absolute_max_latency = latency;
-        }
-        sync->cycle_count++;
-
         // Divergence detection: read PID_TORQUE_FLUX_ACTUAL (0x69)
         uint8_t act_leader_msg[5] = { 0x69, 0x00, 0x00, 0x00, 0x00 };
         spidev_transfer_tmc4671_read(sync->leader_spi, act_leader_msg);
@@ -216,6 +205,17 @@ void tmc4671_sync_task(void) {
         } else {
             sync->current_divergence_ticks = 0;
         }
+
+        // Record true latency including all SPI transactions (target + mode + divergence)
+        uint32_t now = timer_read_time();
+        uint32_t latency = now - scheduled;
+        if (latency > sync->max_latency) {
+            sync->max_latency = latency;
+        }
+        if (latency > sync->absolute_max_latency) {
+            sync->absolute_max_latency = latency;
+        }
+        sync->cycle_count++;
     }
 }
 DECL_TASK(tmc4671_sync_task);
