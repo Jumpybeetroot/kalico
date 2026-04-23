@@ -2045,6 +2045,9 @@ class TMC4671:
             c[i]=(monotonic_ns(), cur,)
         return c
 
+    def get_spi_oid(self):
+        return getattr(self.mcu_tmc.tmc_spi.spi, 'oid', None)
+
     def _init_registers(self, print_time=None):
         with self.mutex:
             if print_time is None:

@@ -43,11 +43,10 @@ class TMC4671Sync:
                 "TMC4671 Leader/Follower sync requires both drivers to be on the same MCU"
             )
             
-        leader_spi_oid = getattr(self.leader.mcu_tmc.tmc_spi.spi, 'oid', None)
-        follower_spi_oid = getattr(self.follower.mcu_tmc.tmc_spi.spi, 'oid', None)
+        leader_spi_oid = self.leader.get_spi_oid() if hasattr(self.leader, 'get_spi_oid') else None
+        follower_spi_oid = self.follower.get_spi_oid() if hasattr(self.follower, 'get_spi_oid') else None
 
         if leader_spi_oid is None or follower_spi_oid is None:
-             logging.info(f"Leader SPI: {dir(self.leader.mcu_tmc.tmc_spi.spi)}")
              raise self.printer.command_error("Could not determine SPI OID for TMC4671 drivers")
         
         # Calculate rest ticks based on sync_rate
