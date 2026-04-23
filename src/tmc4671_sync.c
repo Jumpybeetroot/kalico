@@ -97,18 +97,18 @@ void tmc4671_sync_task(void) {
         }
         sync->cycle_count++;
 
-        // 0x71 is PID_TORQUE_ACTUAL
+        // 0x64 is PID_TORQUE_FLUX_TARGET
         // Read from leader using split transfer (500ns pause after address)
-        uint8_t read_msg[5] = { 0x71, 0x00, 0x00, 0x00, 0x00 };
+        uint8_t read_msg[5] = { 0x64, 0x00, 0x00, 0x00, 0x00 };
         spidev_transfer_tmc4671_read(sync->leader_spi, read_msg);
         
         uint32_t val;
         memcpy(&val, &read_msg[1], 4);
         sync->last_leader_value = be32_to_cpu(val);
         
-        // Write to follower. Address MSB=1 to write, so 0x66 | 0x80 = 0xE6
+        // Write to follower. Address MSB=1 to write, so 0x64 | 0x80 = 0xE4
         // The read_msg buffer now contains what we want to write in indices 1..4.
-        uint8_t write_msg[5] = { 0xE6, read_msg[1], read_msg[2], read_msg[3], read_msg[4] };
+        uint8_t write_msg[5] = { 0xE4, read_msg[1], read_msg[2], read_msg[3], read_msg[4] };
         spidev_transfer(sync->follower_spi, 0, 5, write_msg);
     }
 }
