@@ -11,9 +11,9 @@ The objective of this module is to achieve **Rigid-Coupling Synchronization** be
 The AWD Sync system is split across the Python host and the C-level MCU firmware:
 
 1. **`tmc4671_sync.py` (Klipper Host):**
-   * Acts as the configurator. 
-   * It is responsible for identifying the Leader and Follower drivers, setting up the safety boundaries, and sending the `tmc4671_awd_sync` initialization command to the MCU.
-2. **`tmc4671.c` (MCU Firmware):**
+   * Acts as the configurator.
+   * It is responsible for identifying the Leader and Follower drivers, setting up the safety boundaries, and sending the `config_tmc4671_sync` initialization command to the MCU.
+2. **`tmc4671_sync.c` (MCU Firmware):**
    * Contains the high-speed SPI synchronization task loop.
    * This is where the actual torque mirroring happens.
 
@@ -37,8 +37,8 @@ If you are testing the firmware logic using the `linux` MCU simulator:
 ### D. TMC4671 Pipelined SPI Sub-Registers & MCU Preemption
 The TMC4671 uses a multiplexed sub-register architecture (e.g., writing an address to `0x01` and reading data from `0x00`).
 * **The Problem:** Klipper's Python driver (`tmc4671.py`) performs these multi-step sub-register accesses as two distinct, independent SPI commands (`spi_send` followed by `spi_transfer`). Because Klipper cooperatively schedules MCU tasks, the high-speed C-loop (`tmc4671_sync_task`) can and will interleave its own single-frame direct register reads (like `0x64`) right in the middle of Klipper's two-step sub-register dance. Any interleaved SPI access resets the TMC4671's internal SPI read-fetch state machine, causing Klipper to read back garbage or mismatched target payloads instead of the requested sub-register data.
-* **The Solution:** We must strictly serialize host SPI access with the C-loop. This is achieved via `tmc4671_sync_pause` and `tmc4671_sync_resume` commands. The Klipper Python driver (`tmc4671_sync.py`) monkey-patches the core `get_register` and `set_register` methods of `tmc4671.py` to seamlessly wrap host communication in these pause/resume bounds.
-* **The Rule:** If you ever modify how `tmc4671.py` handles multi-step communication, or if you add new synchronization loops to the C-firmware, you **MUST** ensure that MCU tasks safely yield their SPI operations while the host driver completes stateful sub-register sequences.
+* **The Solution:** Host SPI access is strictly serialized with the C-loop via the `tmc4671_sync_pause` and `tmc4671_sync_resume` MCU commands. On `klippy:mcu_identify`, `tmc4671_sync.py` monkey-patches `MCU_TMC_SPI.get_register`, `set_register`, and `set_register_once` on both the Leader and Follower to wrap each call in a pause/resume pair, keeping the whole two-step sub-register sequence inside a single pause window. Because Klipper's MCU tasks are cooperative, the `if (sync->paused) continue;` check at the top of `tmc4671_sync_task` is sufficient — any in-flight cycle completes atomically before the pause command is processed.
+* **The Rule:** If you ever modify how `tmc4671.py` handles multi-step communication, or if you add new synchronization loops to the C-firmware, you **MUST** ensure that MCU tasks safely yield their SPI operations while the host driver completes stateful sub-register sequences. New host entry points that touch TMC registers directly (bypassing `MCU_TMC_SPI`) must be wrapped in the same pause/resume pair or routed through the monkey-patched methods.
 
 ### E. State-Transitions, Safety Clamps, & Telemetry
 When dealing with a high-speed continuous firmware loop, state management is critical to prevent dangerous race conditions:

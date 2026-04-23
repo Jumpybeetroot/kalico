@@ -74,7 +74,10 @@ DECL_COMMAND(command_config_tmc4671_sync,
 void command_tmc4671_sync_start(uint32_t *args) {
     struct tmc4671_sync_s *sync = oid_lookup(args[0], command_config_tmc4671_sync);
     sched_del_timer(&sync->timer);
-    
+    // Drop any pending cycle left over from a previous run so the first
+    // post-start dispatch uses the new scheduled_time rather than stale state.
+    sync->flags &= ~TMC_SYNC_PENDING;
+
     // Reset counters and accumulators for a clean start
     sync->cycle_count = 0;
     sync->overrun_count = 0;

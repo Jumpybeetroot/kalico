@@ -146,14 +146,15 @@ class TMC4671Sync:
         finally:
             self.cmd_sync_resume.send([self.sync_oid])
 
-    def handle_connect(self):
+    def _arm_follower(self):
         if hasattr(self.follower, "mcu_tmc"):
-            # 1. Zero out the follower's target first to prevent sudden jerks
+            # Zero out the follower's target first to prevent sudden jerks,
+            # then put it into torque mode without clobbering PID_TYPE/FF bits.
             self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
-            # 2. Put follower into torque mode (MODE_MOTION = 1) without clobbering PID_TYPE or FF bits
             self.follower.mcu_tmc.write_field("MODE_MOTION", 1)
-            
-        # 3. Now safely start the sync task
+
+    def handle_connect(self):
+        self._arm_follower()
         mcu = self.leader.mcu_tmc.tmc_spi.spi.get_mcu()
         clock = mcu.get_query_slot(mcu.estimated_print_time(self.printer.get_reactor().monotonic()))
         rest_ticks = mcu.seconds_to_clock(1.0 / self.sync_rate)
@@ -210,6 +211,7 @@ class TMC4671Sync:
         if not hasattr(self, 'cmd_sync_start'):
             gcmd.respond_info("TMC4671 Sync not fully initialized yet.")
             return
+        self._arm_follower()
         mcu = self.leader.mcu_tmc.tmc_spi.spi.get_mcu()
         clock = mcu.get_query_slot(mcu.estimated_print_time(self.printer.get_reactor().monotonic()))
         rest_ticks = mcu.seconds_to_clock(1.0 / self.sync_rate)
