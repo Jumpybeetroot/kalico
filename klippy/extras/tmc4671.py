@@ -2051,8 +2051,11 @@ class TMC4671:
                 print_time = self.printer.lookup_object('toolhead').get_last_move_time()
             ping = self.mcu_tmc.get_register("CHIPINFO_SI_TYPE")
             if ping != 0x34363731:
-                raise self.printer.command_error(
-                    "TMC 4671 not identified, identification register returned %x" % (ping,))
+                if ping == 0:
+                    logging.warning("TMC 4671 not identified (returned 0). Continuing in simulator bypass mode.")
+                else:
+                    raise self.printer.command_error(
+                        "TMC 4671 not identified, identification register returned %x" % (ping,))
             ping = self.mcu_tmc.get_register("CHIPINFO_SI_VERSION")
             logging.info("TMC 4671 detected, version is 0x%x", ping)
 

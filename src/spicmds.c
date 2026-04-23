@@ -10,6 +10,7 @@
 #include "basecmd.h" // oid_alloc
 #include "command.h" // DECL_COMMAND
 #include "sched.h" // DECL_SHUTDOWN
+#include "board/irq.h" // irq_poll
 #include "spi_software.h" // spi_software_setup
 #include "spicmds.h" // spidev_transfer
 #include "board/misc.h" // timer_read_time, timer_from_us
@@ -118,17 +119,48 @@ spidev_transfer(struct spidev_s *spi, uint8_t receive_data
 
     if (flags & SF_HAVE_PIN) {
         gpio_out_write(spi->pin, !!(flags & SF_CS_ACTIVE_HIGH));
-        
-        // 500ns delay for high-speed SPI requirements (e.g. TMC4671)
-        uint32_t end = timer_read_time() + (timer_from_us(1) / 2);
-        while (timer_is_before(timer_read_time(), end))
-            ;
     }
 
     if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
         spi_software_transfer(spi->spi_software, receive_data, data_len, data);
     else
         spi_transfer(spi->spi_config, receive_data, data_len, data);
+
+    if (flags & SF_HAVE_PIN)
+        gpio_out_write(spi->pin, !(flags & SF_CS_ACTIVE_HIGH));
+}
+
+void
+spidev_transfer_tmc4671_read(struct spidev_s *spi, uint8_t *data)
+{
+    uint_fast8_t flags = spi->flags;
+    if (!(flags & (SF_SOFTWARE|SF_HARDWARE)))
+        return;
+
+    if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
+        spi_software_prepare(spi->spi_software);
+    else
+        spi_prepare(spi->spi_config);
+
+    if (flags & SF_HAVE_PIN)
+        gpio_out_write(spi->pin, !!(flags & SF_CS_ACTIVE_HIGH));
+
+    // Send the 1-byte address
+    if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
+        spi_software_transfer(spi->spi_software, 0, 1, data);
+    else
+        spi_transfer(spi->spi_config, 0, 1, data);
+
+    // 500ns delay after address byte for high-speed reads (datasheet >2MHz)
+    uint32_t end = timer_read_time() + (timer_from_us(1) / 2);
+    while (timer_is_before(timer_read_time(), end))
+        irq_poll(); // Allow other interrupts while waiting
+
+    // Receive the 4 bytes of data
+    if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
+        spi_software_transfer(spi->spi_software, 1, 4, data + 1);
+    else
+        spi_transfer(spi->spi_config, 1, 4, data + 1);
 
     if (flags & SF_HAVE_PIN)
         gpio_out_write(spi->pin, !(flags & SF_CS_ACTIVE_HIGH));

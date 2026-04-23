@@ -86,9 +86,9 @@ void tmc4671_sync_task(void) {
         sync->cycle_count++;
 
         // 0x71 is PID_TORQUE_ACTUAL
-        // Read from leader
+        // Read from leader using split transfer (500ns pause after address)
         uint8_t read_msg[5] = { 0x71, 0x00, 0x00, 0x00, 0x00 };
-        spidev_transfer(sync->leader_spi, 1, 5, read_msg);
+        spidev_transfer_tmc4671_read(sync->leader_spi, read_msg);
         
         uint32_t val;
         memcpy(&val, &read_msg[1], 4);
