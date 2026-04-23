@@ -26,7 +26,7 @@ struct tmc4671_sync_s {
     uint16_t divergence_threshold;
     uint16_t max_divergence_ticks;
     uint16_t current_divergence_ticks;
-    uint8_t invalid_mode_ticks;
+    uint8_t valid_mode_ticks;
 };
 
 enum {
@@ -64,7 +64,7 @@ void command_config_tmc4671_sync(uint32_t *args) {
     sync->divergence_threshold = args[3];
     sync->max_divergence_ticks = args[4];
     sync->current_divergence_ticks = 0;
-    sync->invalid_mode_ticks = 0;
+    sync->valid_mode_ticks = 0;
 }
 DECL_COMMAND(command_config_tmc4671_sync,
              "config_tmc4671_sync oid=%c leader_spi_oid=%c follower_spi_oid=%c div_thresh=%hu div_ticks=%hu");
@@ -126,17 +126,22 @@ void tmc4671_sync_task(void) {
         sync->last_leader_value = be32_to_cpu(val);
         
         // If leader is not in Torque (1), Velocity (2), or Position (3) mode,
-        // it may be disabled or reconfiguring. Force the target to 0 for safety.
-        if (mode != 1 && mode != 2 && mode != 3) {
-            sync->invalid_mode_ticks++;
-            if (sync->invalid_mode_ticks >= 2) {
-                val = 0;
-                uint32_t be_val = cpu_to_be32(val);
-                memcpy(&read_msg[1], &be_val, 4);
-                sync->last_leader_value = 0;
+        // it may be disabled or reconfiguring.
+        if (mode == 1 || mode == 2 || mode == 3) {
+            if (sync->valid_mode_ticks < 255) {
+                sync->valid_mode_ticks++;
             }
         } else {
-            sync->invalid_mode_ticks = 0;
+            sync->valid_mode_ticks = 0;
+        }
+
+        // Force target to 0 immediately on any invalid mode, and require
+        // 2 consecutive valid ticks before re-enabling forwarding.
+        if (sync->valid_mode_ticks < 2) {
+            val = 0;
+            uint32_t be_val = cpu_to_be32(val);
+            memcpy(&read_msg[1], &be_val, 4);
+            sync->last_leader_value = 0;
         }
 
         // Write to follower. Address MSB=1 to write, so 0x64 | 0x80 = 0xE4
