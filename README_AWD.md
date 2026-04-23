@@ -37,7 +37,7 @@ If the Follower loses mechanical tracking (e.g., a phase wire disconnects, or th
 
 **Config Parameters:**
 * `divergence_threshold`: The allowable mismatch in raw ADC current units before flagging a fault (Default: `500`). *Note: This is set loosely by default. Even perfectly matched motors will exhibit transient divergence during heavy acceleration ramps due to micro-variations in rotor inertia and flux alignment. You may need to tune this to avoid false-positives while maintaining safety.*
-* `divergence_time`: The duration the mismatch must persist continuously before triggering the MCU shutdown (Default: `0.05` seconds).
+* `divergence_time`: The duration the mismatch must persist continuously before triggering the MCU shutdown (Default: `0.05` seconds). *Note: Do not set this extremely low (e.g., <0.01s). When `SYNC_START` is called, the Follower begins at 0 torque. If the Leader is actively holding a heavy axis, it will take the Follower a few milliseconds of loop cycles to physically spool up its rotor flux to match. This time threshold safely absorbs that initial start-up disparity.*
 
 ### 4. SPI Bus Concurrency & Isolation
 The hardware implementation relies on Klipper's per-transaction SPI locking. This means the 5 separate register transfers per cycle are individually atomic, but the sequence as a whole is not locked. 
