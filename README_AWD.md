@@ -28,7 +28,7 @@ To satisfy this without stalling the rest of the MCU or slowing down generic SPI
 ### 2. State-Transition Safety Clamps
 Because the sync loop runs continuously, there is a risk of mirroring glitched data if the Leader undergoes a state transition (e.g., during homing, configuration, or emergency stops). 
 
-To prevent the Follower from violently reacting to stale limits during transitions, the firmware safely intercepts the forward path. It performs a 5-microsecond lookahead to check the Leader's `MODE_RAMP_MODE_MOTION` (0x63) register. If the Leader is **not** actively in a closed-loop motion mode (Torque, Velocity, or Position), the C-loop forces the Follower's target torque and flux to exactly `0`, safely cutting all power.
+To prevent the Follower from violently reacting to stale limits during transitions, the firmware safely intercepts the forward path. It executes a sequential pre-read of the Leader's `MODE_RAMP_MODE_MOTION` (0x63) register immediately before fetching the target. If the Leader is **not** actively in a closed-loop motion mode (Torque, Velocity, or Position), the C-loop forces the Follower's target torque and flux to exactly `0`, safely cutting all power.
 
 ### 3. Asynchronous Telemetry & Host Controls
 The synchronization loop exposes full diagnostic telemetry to the Kalico host without blocking the real-time C loop:
