@@ -77,6 +77,10 @@ void command_tmc4671_sync_stop(uint32_t *args) {
     struct tmc4671_sync_s *sync = oid_lookup(oid, command_config_tmc4671_sync);
     sched_del_timer(&sync->timer);
     sync->flags &= ~TMC_SYNC_PENDING;
+
+    // Disarm the follower: Write 0 to PID_TORQUE_FLUX_TARGET (0x64 | 0x80 = 0xE4)
+    uint8_t zero_msg[5] = { 0xE4, 0x00, 0x00, 0x00, 0x00 };
+    spidev_transfer(sync->follower_spi, 0, 5, zero_msg);
 }
 DECL_COMMAND(command_tmc4671_sync_stop, "tmc4671_sync_stop oid=%c");
 
