@@ -56,10 +56,6 @@ class TMC4671Sync:
                  "TMC4671 Leader/Follower sync requires distinct leader and follower drivers"
              )
         
-        # Calculate rest ticks based on sync_rate
-        clock = mcu.get_query_slot(mcu.estimated_print_time(self.printer.get_reactor().monotonic()))
-        rest_ticks = mcu.seconds_to_clock(1.0 / self.sync_rate)
-        
         # Allocate our custom synced spi oid
         self.sync_oid = mcu.create_oid()
         div_ticks = int(self.divergence_time * self.sync_rate)
@@ -67,12 +63,6 @@ class TMC4671Sync:
             f"config_tmc4671_sync oid={self.sync_oid} "
             f"leader_spi_oid={leader_spi_oid} follower_spi_oid={follower_spi_oid} "
             f"div_thresh={self.divergence_threshold} div_ticks={div_ticks}"
-        )
-        
-        # Command them to start
-        mcu.add_config_cmd(
-            f"tmc4671_sync_start oid={self.sync_oid} clock={clock} rest_ticks={rest_ticks}",
-            is_init=True
         )
         
         self.cmd_sync_status = mcu.lookup_query_command(
@@ -87,13 +77,21 @@ class TMC4671Sync:
                      f"and Follower {self.follower_name} at {self.sync_rate}Hz")
 
     def handle_connect(self):
-        # Override follower's mode to Torque mode (MODE_MOTION = 1)
         if hasattr(self.follower, "mcu_tmc"):
             try:
+                # 1. Zero out the follower's target first to prevent sudden jerks
+                self.follower.mcu_tmc.set_register("PID_TORQUE_FLUX_TARGET", 0)
+                # 2. Put follower into torque mode (MODE_MOTION = 1)
                 self.follower.mcu_tmc.set_register("MODE_RAMP_MODE_MOTION", 1)
             except self.printer.command_error as e:
                 logging.error(f"TMC4671 Sync: Failed to set follower '{self.follower_name}' to torque mode! Sync will fail.")
                 raise e
+                
+        # 3. Now safely start the sync task
+        mcu = self.leader.mcu_tmc.tmc_spi.spi.get_mcu()
+        clock = mcu.get_query_slot(mcu.estimated_print_time(self.printer.get_reactor().monotonic()))
+        rest_ticks = mcu.seconds_to_clock(1.0 / self.sync_rate)
+        self.cmd_sync_start.send([self.sync_oid, clock, rest_ticks])
 
     def cmd_DUMP_TMC4671_SYNC(self, gcmd):
         if not hasattr(self, 'cmd_sync_status'):
