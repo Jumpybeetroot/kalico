@@ -99,18 +99,19 @@ void tmc4671_sync_task(void) {
 
 
 
+        // 0x64 is PID_TORQUE_FLUX_TARGET
+        // Read from leader using split transfer (500ns pause after address)
+        uint8_t read_msg[5] = { 0x64, 0x00, 0x00, 0x00, 0x00 };
+        spidev_transfer_tmc4671_read(sync->leader_spi, read_msg);
+
         // Check leader mode. 0x63 is MODE_RAMP_MODE_MOTION
+        // We read mode AFTER target to guarantee the mode was valid when the target was captured.
         uint8_t mode_msg[5] = { 0x63, 0x00, 0x00, 0x00, 0x00 };
         spidev_transfer_tmc4671_read(sync->leader_spi, mode_msg);
         
         uint32_t mode_val;
         memcpy(&mode_val, &mode_msg[1], 4);
         uint8_t mode = be32_to_cpu(mode_val) & 0xFF;
-
-        // 0x64 is PID_TORQUE_FLUX_TARGET
-        // Read from leader using split transfer (500ns pause after address)
-        uint8_t read_msg[5] = { 0x64, 0x00, 0x00, 0x00, 0x00 };
-        spidev_transfer_tmc4671_read(sync->leader_spi, read_msg);
         
         uint32_t val;
         memcpy(&val, &read_msg[1], 4);
