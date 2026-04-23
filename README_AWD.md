@@ -39,7 +39,12 @@ If the Follower loses mechanical tracking (e.g., a phase wire disconnects, or th
 * `divergence_threshold`: The allowable mismatch in raw ADC current units before flagging a fault (Default: `500`). *Note: This is set loosely by default. Even perfectly matched motors will exhibit transient divergence during heavy acceleration ramps due to micro-variations in rotor inertia and flux alignment. You may need to tune this to avoid false-positives while maintaining safety.*
 * `divergence_time`: The duration the mismatch must persist continuously before triggering the MCU shutdown (Default: `0.05` seconds).
 
-### 4. Asynchronous Telemetry & Host Controls
+### 4. SPI Bus Concurrency & Isolation
+The hardware implementation relies on Klipper's per-transaction SPI locking. This means the 5 separate register transfers per cycle are individually atomic, but the sequence as a whole is not locked. 
+* **Hardware Requirement**: The TMC4671 Leader and Follower drivers **must** be on an isolated SPI bus with no bandwidth-heavy peripherals (e.g., SD cards, LCDs). The Ouroboros hardware natively guarantees this isolation.
+* **Host Polling**: If the host issues configuration reads (e.g., `DUMP_TMC`) during active synchronization, those reads will interleave safely with the C-loop. However, they will introduce a microsecond latency penalty. Avoid aggressive host polling during high-speed prints to maintain strict sub-millisecond synchronization latency.
+
+### 5. Asynchronous Telemetry & Host Controls
 The synchronization loop exposes full diagnostic telemetry to the Kalico host without blocking the real-time C loop:
 * **`DUMP_SYNC_<NAME>`**: Provides real-time metrics including cycle counts, overruns, the last forwarded target, and tracks both the recent `max_latency` and the `absolute_max_latency` (peak jitter) since boot.
 * **`SYNC_STOP_<NAME>` / `SYNC_START_<NAME>`**: Dynamic G-Code commands allowing macros to pause the hardware synchronization cleanly during complex homing maneuvers or sensorless probing.
