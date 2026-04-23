@@ -50,6 +50,11 @@ class TMC4671Sync:
 
         if leader_spi_oid is None or follower_spi_oid is None:
              raise self.printer.command_error("Could not determine SPI OID for TMC4671 drivers")
+             
+        if leader_spi_oid == follower_spi_oid:
+             raise self.printer.command_error(
+                 "TMC4671 Leader/Follower sync requires distinct leader and follower drivers"
+             )
         
         # Calculate rest ticks based on sync_rate
         clock = mcu.get_query_slot(mcu.estimated_print_time(self.printer.get_reactor().monotonic()))

@@ -41,6 +41,12 @@ static uint_fast8_t tmc4671_sync_event(struct timer *timer) {
     
     if (sync->flags & TMC_SYNC_PENDING) {
         sync->overrun_count++;
+        /* 
+         * Note: scheduled_time is deliberately NOT updated on overrun. 
+         * This causes the reported latency of the next successful execution 
+         * to span multiple cycles, effectively surfacing the skipped cycle 
+         * as a massive latency spike rather than hiding it.
+         */
     } else {
         sync->scheduled_time = timer->waketime;
     }
