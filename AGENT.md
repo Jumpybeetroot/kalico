@@ -25,8 +25,9 @@ Do NOT attempt to sync the target registers (`PID_TORQUE_TARGET`).
 * **Why:** The Follower driver should operate with its own PID loops disabled (or zeroed), acting purely as a slave amplifier that mathematically adds the Leader's actual torque onto its baseline via the offset register.
 
 ### B. SPI Bus Delay
-* **The Rule:** The SPI synchronization loop in the MCU contains a mandatory **500ns delay** after read operations. 
-* DO NOT remove or optimize away this delay. It is strictly required only when reading from the TMC4671 at SPI clock rates higher than 2MHz to ensure stable data retrieval.
+* **The Rule:** The SPI synchronization loop in the MCU contains a mandatory **500ns delay**. 
+* **Datasheet Specification:** SPI write access can be performed up to 8 MHz. SPI read access can be performed up to 8 MHz ONLY if a pause of at least 500 ns is inserted *after* the transfer of the address byte. Without this 500 ns pause after the address byte, SPI read access is limited to a maximum of 2 MHz.
+* DO NOT remove or optimize away this delay if operating the SPI bus at high frequencies (>2MHz).
 
 ### C. Testing on the Linux Simulator
 If you are testing the firmware logic using the `linux` MCU simulator:
