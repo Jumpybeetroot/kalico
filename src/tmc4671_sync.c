@@ -27,6 +27,7 @@ struct tmc4671_sync_s {
     uint16_t max_divergence_ticks;
     uint16_t current_divergence_ticks;
     uint8_t valid_mode_ticks;
+    uint8_t paused;
 };
 
 enum {
@@ -65,6 +66,7 @@ void command_config_tmc4671_sync(uint32_t *args) {
     sync->max_divergence_ticks = args[4];
     sync->current_divergence_ticks = 0;
     sync->valid_mode_ticks = 0;
+    sync->paused = 0;
 }
 DECL_COMMAND(command_config_tmc4671_sync,
              "config_tmc4671_sync oid=%c leader_spi_oid=%c follower_spi_oid=%c div_thresh=%hu div_ticks=%hu");
@@ -92,6 +94,20 @@ void command_tmc4671_sync_stop(uint32_t *args) {
 }
 DECL_COMMAND(command_tmc4671_sync_stop, "tmc4671_sync_stop oid=%c");
 
+void command_tmc4671_sync_pause(uint32_t *args) {
+    uint8_t oid = args[0];
+    struct tmc4671_sync_s *sync = oid_lookup(oid, command_config_tmc4671_sync);
+    sync->paused = 1;
+}
+DECL_COMMAND(command_tmc4671_sync_pause, "tmc4671_sync_pause oid=%c");
+
+void command_tmc4671_sync_resume(uint32_t *args) {
+    uint8_t oid = args[0];
+    struct tmc4671_sync_s *sync = oid_lookup(oid, command_config_tmc4671_sync);
+    sync->paused = 0;
+}
+DECL_COMMAND(command_tmc4671_sync_resume, "tmc4671_sync_resume oid=%c");
+
 void tmc4671_sync_task(void) {
     if (!sched_check_wake(&tmc4671_sync_wake))
         return;
@@ -105,7 +121,8 @@ void tmc4671_sync_task(void) {
         sync->flags &= ~TMC_SYNC_PENDING;
         irq_enable();
 
-
+        if (sync->paused)
+            continue;
 
         // 0x64 is PID_TORQUE_FLUX_TARGET
         // Read from leader using split transfer (500ns pause after address)

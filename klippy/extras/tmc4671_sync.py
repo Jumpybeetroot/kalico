@@ -77,9 +77,74 @@ class TMC4671Sync:
         )
         self.cmd_sync_stop = mcu.lookup_command("tmc4671_sync_stop oid=%c")
         self.cmd_sync_start = mcu.lookup_command("tmc4671_sync_start oid=%c clock=%u rest_ticks=%u")
+        self.cmd_sync_pause = mcu.lookup_command("tmc4671_sync_pause oid=%c")
+        self.cmd_sync_resume = mcu.lookup_command("tmc4671_sync_resume oid=%c")
+
+        self._wrap_tmc_methods()
 
         logging.info(f"TMC4671 Sync configured for Leader {self.leader_name} "
                      f"and Follower {self.follower_name} at {self.sync_rate}Hz")
+
+    def _wrap_tmc_methods(self):
+        # Wrap leader
+        self.old_leader_get_reg = self.leader.mcu_tmc.get_register
+        self.old_leader_set_reg = self.leader.mcu_tmc.set_register_once
+        self.old_leader_set_reg_m = self.leader.mcu_tmc.set_register
+        
+        self.leader.mcu_tmc.get_register = self._leader_get_reg
+        self.leader.mcu_tmc.set_register_once = self._leader_set_reg
+        self.leader.mcu_tmc.set_register = self._leader_set_reg_m
+
+        # Wrap follower
+        self.old_follower_get_reg = self.follower.mcu_tmc.get_register
+        self.old_follower_set_reg = self.follower.mcu_tmc.set_register_once
+        self.old_follower_set_reg_m = self.follower.mcu_tmc.set_register
+        
+        self.follower.mcu_tmc.get_register = self._follower_get_reg
+        self.follower.mcu_tmc.set_register_once = self._follower_set_reg
+        self.follower.mcu_tmc.set_register = self._follower_set_reg_m
+
+    def _leader_get_reg(self, reg_name):
+        self.cmd_sync_pause.send([self.sync_oid])
+        try:
+            return self.old_leader_get_reg(reg_name)
+        finally:
+            self.cmd_sync_resume.send([self.sync_oid])
+
+    def _leader_set_reg(self, reg_name, val, print_time=None):
+        self.cmd_sync_pause.send([self.sync_oid])
+        try:
+            return self.old_leader_set_reg(reg_name, val, print_time)
+        finally:
+            self.cmd_sync_resume.send([self.sync_oid])
+            
+    def _leader_set_reg_m(self, reg_name, val, print_time=None):
+        self.cmd_sync_pause.send([self.sync_oid])
+        try:
+            return self.old_leader_set_reg_m(reg_name, val, print_time)
+        finally:
+            self.cmd_sync_resume.send([self.sync_oid])
+
+    def _follower_get_reg(self, reg_name):
+        self.cmd_sync_pause.send([self.sync_oid])
+        try:
+            return self.old_follower_get_reg(reg_name)
+        finally:
+            self.cmd_sync_resume.send([self.sync_oid])
+
+    def _follower_set_reg(self, reg_name, val, print_time=None):
+        self.cmd_sync_pause.send([self.sync_oid])
+        try:
+            return self.old_follower_set_reg(reg_name, val, print_time)
+        finally:
+            self.cmd_sync_resume.send([self.sync_oid])
+            
+    def _follower_set_reg_m(self, reg_name, val, print_time=None):
+        self.cmd_sync_pause.send([self.sync_oid])
+        try:
+            return self.old_follower_set_reg_m(reg_name, val, print_time)
+        finally:
+            self.cmd_sync_resume.send([self.sync_oid])
 
     def handle_connect(self):
         if hasattr(self.follower, "mcu_tmc"):
