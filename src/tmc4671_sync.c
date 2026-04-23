@@ -136,6 +136,7 @@ void tmc4671_sync_task(void) {
         
         uint32_t mode_val;
         memcpy(&mode_val, &mode_msg[1], 4);
+        // Extract MODE_MOTION (bits 0:7). Other bits are MODE_FF, MODE_PID_SMPL, MODE_PID_TYPE
         uint8_t mode = be32_to_cpu(mode_val) & 0xFF;
         
         uint32_t val;
