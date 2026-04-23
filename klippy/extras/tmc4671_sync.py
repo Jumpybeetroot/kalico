@@ -68,7 +68,7 @@ class TMC4671Sync:
         
         self.cmd_sync_status = mcu.lookup_query_command(
             "tmc4671_sync_status oid=%c",
-            "tmc4671_sync_status_response oid=%c cycle_count=%u overrun_count=%u max_latency=%u last_leader_value=%u",
+            "tmc4671_sync_status_response oid=%c cycle_count=%u overrun_count=%u max_latency=%u absolute_max_latency=%u last_leader_value=%u",
             oid=self.sync_oid
         )
         self.cmd_sync_stop = mcu.lookup_command("tmc4671_sync_stop oid=%c")
@@ -96,12 +96,14 @@ class TMC4671Sync:
         cycle_count = params['cycle_count']
         overrun_count = params['overrun_count']
         max_latency = params['max_latency']
+        absolute_max_latency = params['absolute_max_latency']
         last_leader_value = params['last_leader_value']
         
         gcmd.respond_info(f"TMC4671 Sync '{self.name}' Stats:\n"
                            f"Cycles: {cycle_count}\n"
                            f"Overruns: {overrun_count}\n"
-                           f"Max Latency (ticks): {max_latency}\n"
+                           f"Max Latency (since last dump): {max_latency}\n"
+                           f"Absolute Max Latency (all time): {absolute_max_latency}\n"
                            f"Last Leader Torque Target: {last_leader_value}")
 
     def cmd_SYNC_STOP(self, gcmd):

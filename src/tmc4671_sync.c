@@ -21,6 +21,7 @@ struct tmc4671_sync_s {
     uint32_t cycle_count;
     uint32_t overrun_count;
     uint32_t max_latency;
+    uint32_t absolute_max_latency;
     uint32_t last_leader_value;
 };
 
@@ -91,6 +92,9 @@ void tmc4671_sync_task(void) {
         if (latency > sync->max_latency) {
             sync->max_latency = latency;
         }
+        if (latency > sync->absolute_max_latency) {
+            sync->absolute_max_latency = latency;
+        }
         sync->cycle_count++;
 
         // 0x71 is PID_TORQUE_ACTUAL
@@ -113,8 +117,8 @@ DECL_TASK(tmc4671_sync_task);
 void command_tmc4671_sync_status(uint32_t *args) {
     uint8_t oid = args[0];
     struct tmc4671_sync_s *sync = oid_lookup(oid, command_config_tmc4671_sync);
-    sendf("tmc4671_sync_status_response oid=%c cycle_count=%u overrun_count=%u max_latency=%u last_leader_value=%u",
-          oid, sync->cycle_count, sync->overrun_count, sync->max_latency, sync->last_leader_value);
+    sendf("tmc4671_sync_status_response oid=%c cycle_count=%u overrun_count=%u max_latency=%u absolute_max_latency=%u last_leader_value=%u",
+          oid, sync->cycle_count, sync->overrun_count, sync->max_latency, sync->absolute_max_latency, sync->last_leader_value);
     sync->max_latency = 0; // reset on read
 }
 DECL_COMMAND(command_tmc4671_sync_status, "tmc4671_sync_status oid=%c");
