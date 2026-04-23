@@ -27,6 +27,8 @@ The TMC4671 datasheet enforces a strict hardware requirement: when running the S
 
 To satisfy this without stalling the rest of the MCU or slowing down generic SPI devices, Kalico implements a custom `spidev_transfer_tmc4671_read()` C function. It splits the transfer, injects a precise 500ns `timer_read_time()` delay after the address byte, and safely retrieves the remaining 4 bytes of telemetry.
 
+*(Note: Klipper's default SPI speed for the TMC4671 is 1MHz. At 1MHz, the natural inter-byte gap fulfills the 500ns requirement without this delay. To actually utilize the high-speed 8MHz bus and minimize sync latency, you must explicitly set `spi_speed: 8000000` in both your Leader and Follower `[tmc4671]` config blocks.)*
+
 ### 2. State-Transition Safety Clamps
 Because the sync loop runs continuously, there is a risk of mirroring glitched data if the Leader undergoes a state transition (e.g., during homing, configuration, or emergency stops). 
 
