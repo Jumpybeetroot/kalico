@@ -74,6 +74,16 @@ DECL_COMMAND(command_config_tmc4671_sync,
 void command_tmc4671_sync_start(uint32_t *args) {
     struct tmc4671_sync_s *sync = oid_lookup(args[0], command_config_tmc4671_sync);
     sched_del_timer(&sync->timer);
+    
+    // Reset counters and accumulators for a clean start
+    sync->cycle_count = 0;
+    sync->overrun_count = 0;
+    sync->max_latency = 0;
+    sync->absolute_max_latency = 0;
+    sync->current_divergence_ticks = 0;
+    sync->valid_mode_ticks = 0;
+    sync->last_leader_value = 0;
+    
     sync->timer.waketime = args[1];
     sync->rest_time = args[2];
     if (sync->rest_time)
