@@ -12,8 +12,8 @@ class TMC4671Sync:
             raise config.error(f"[tmc4671_sync {self.name}]: leader and follower must be different drivers")
             
         self.sync_rate = config.getint("sync_rate", 2000, minval=100, maxval=10000)
-        self.divergence_threshold = config.getint("divergence_threshold", 500, minval=0)
-        self.divergence_time = config.getfloat("divergence_time", 0.05, minval=0.0)
+        self.divergence_threshold = config.getint("divergence_threshold", 500, minval=0, maxval=65535)
+        self.divergence_time = config.getfloat("divergence_time", 0.05, minval=0.0, maxval=65535.0 / self.sync_rate)
         
         self.leader = None
         self.follower = None
