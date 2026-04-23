@@ -97,6 +97,14 @@ void tmc4671_sync_task(void) {
         }
         sync->cycle_count++;
 
+        // Check leader mode. 0x63 is MODE_RAMP_MODE_MOTION
+        uint8_t mode_msg[5] = { 0x63, 0x00, 0x00, 0x00, 0x00 };
+        spidev_transfer_tmc4671_read(sync->leader_spi, mode_msg);
+        
+        uint32_t mode_val;
+        memcpy(&mode_val, &mode_msg[1], 4);
+        uint8_t mode = be32_to_cpu(mode_val) & 0xFF;
+
         // 0x64 is PID_TORQUE_FLUX_TARGET
         // Read from leader using split transfer (500ns pause after address)
         uint8_t read_msg[5] = { 0x64, 0x00, 0x00, 0x00, 0x00 };
@@ -106,6 +114,15 @@ void tmc4671_sync_task(void) {
         memcpy(&val, &read_msg[1], 4);
         sync->last_leader_value = be32_to_cpu(val);
         
+        // If leader is not in Torque (1), Velocity (2), or Position (3) mode,
+        // it may be disabled or reconfiguring. Force the target to 0 for safety.
+        if (mode != 1 && mode != 2 && mode != 3) {
+            val = 0;
+            uint32_t be_val = cpu_to_be32(val);
+            memcpy(&read_msg[1], &be_val, 4);
+            sync->last_leader_value = 0;
+        }
+
         // Write to follower. Address MSB=1 to write, so 0x64 | 0x80 = 0xE4
         // The read_msg buffer now contains what we want to write in indices 1..4.
         uint8_t write_msg[5] = { 0xE4, read_msg[1], read_msg[2], read_msg[3], read_msg[4] };
