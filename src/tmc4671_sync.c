@@ -65,6 +65,14 @@ void command_tmc4671_sync_start(uint32_t *args) {
 DECL_COMMAND(command_tmc4671_sync_start,
              "tmc4671_sync_start oid=%c clock=%u rest_ticks=%u");
 
+void command_tmc4671_sync_stop(uint32_t *args) {
+    uint8_t oid = args[0];
+    struct tmc4671_sync_s *sync = oid_lookup(oid, command_config_tmc4671_sync);
+    sched_del_timer(&sync->timer);
+    sync->flags &= ~TMC_SYNC_PENDING;
+}
+DECL_COMMAND(command_tmc4671_sync_stop, "tmc4671_sync_stop oid=%c");
+
 void tmc4671_sync_task(void) {
     if (!sched_check_wake(&tmc4671_sync_wake))
         return;

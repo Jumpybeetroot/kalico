@@ -18,6 +18,14 @@ class TMC4671Sync:
             f"DUMP_SYNC_{self.name.upper()}", self.cmd_DUMP_TMC4671_SYNC,
             desc=f"Dump TMC4671 Leader/Follower sync stats for {self.name}"
         )
+        self.printer.lookup_object('gcode').register_command(
+            f"SYNC_STOP_{self.name.upper()}", self.cmd_SYNC_STOP,
+            desc=f"Stop TMC4671 Leader/Follower sync for {self.name}"
+        )
+        self.printer.lookup_object('gcode').register_command(
+            f"SYNC_START_{self.name.upper()}", self.cmd_SYNC_START,
+            desc=f"Start TMC4671 Leader/Follower sync for {self.name}"
+        )
         
     def handle_mcu_identify(self):
         # Look up the TMC4671 driver objects
@@ -64,6 +72,8 @@ class TMC4671Sync:
             "tmc4671_sync_status_response oid=%c cycle_count=%u overrun_count=%u max_latency=%u last_leader_value=%u",
             oid=self.sync_oid
         )
+        self.cmd_sync_stop = mcu.lookup_command("tmc4671_sync_stop oid=%c")
+        self.cmd_sync_start = mcu.lookup_command("tmc4671_sync_start oid=%c clock=%u rest_ticks=%u")
 
         logging.info(f"TMC4671 Sync configured for Leader {self.leader_name} "
                      f"and Follower {self.follower_name} at {self.sync_rate}Hz")
@@ -93,6 +103,23 @@ class TMC4671Sync:
                            f"Overruns: {overrun_count}\n"
                            f"Max Latency (ticks): {max_latency}\n"
                            f"Last Leader Torque Target: {last_leader_value}")
+
+    def cmd_SYNC_STOP(self, gcmd):
+        if not hasattr(self, 'cmd_sync_stop'):
+            gcmd.respond_info("TMC4671 Sync not fully initialized yet.")
+            return
+        self.cmd_sync_stop.send([self.sync_oid])
+        gcmd.respond_info(f"TMC4671 Sync '{self.name}' stopped.")
+
+    def cmd_SYNC_START(self, gcmd):
+        if not hasattr(self, 'cmd_sync_start'):
+            gcmd.respond_info("TMC4671 Sync not fully initialized yet.")
+            return
+        mcu = self.leader.mcu_tmc.tmc_spi.spi.get_mcu()
+        clock = mcu.get_query_slot(mcu.estimated_print_time(self.printer.get_reactor().monotonic()))
+        rest_ticks = mcu.seconds_to_clock(1.0 / self.sync_rate)
+        self.cmd_sync_start.send([self.sync_oid, clock, rest_ticks])
+        gcmd.respond_info(f"TMC4671 Sync '{self.name}' started at {self.sync_rate}Hz.")
 
 def load_config_prefix(config):
     return TMC4671Sync(config)
