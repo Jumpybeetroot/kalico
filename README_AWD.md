@@ -18,6 +18,8 @@ Instead of treating the AWD motors as two independent entities, this architectur
 
 By mirroring the exact target commands across the SPI bus in under a millisecond, the Follower acts as a mathematically perfect "slave amplifier." Both motors exert identical force simultaneously, acting as a single rigidly-coupled unit. This completely eliminates mechanical fighting and bypasses all host-to-MCU communication latency.
 
+**⚠️ Critical FOC Requirement:** The sync module *only* mirrors the torque magnitude. It does not mirror the commutation angle. Therefore, the Follower must have its own independent encoder (or Hall sensors) wired up, and its `[tmc4671]` config block must be fully calibrated (`PHI_E_SELECTION`, `ABN_DECODER_PHI_E_PHI_M_OFFSET`, etc.) just like the Leader. If the Follower's FOC doesn't know its own rotor angle, commanding torque will produce wrong-direction current.
+
 ## Key Technical Features
 
 ### 1. SPI Split-Transfer Read Timing
