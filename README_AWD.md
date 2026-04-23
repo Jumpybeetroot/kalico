@@ -36,7 +36,7 @@ To prevent the Follower from violently reacting to stale limits during transitio
 If the Follower loses mechanical tracking (e.g., a phase wire disconnects, or the encoder slips), the Leader will dynamically ramp up its positional PID torque output to compensate, dragging the disabled Follower. To prevent this catastrophic failure, the C-loop constantly compares `PID_TORQUE_FLUX_ACTUAL` (0x69) between both drivers. If the instantaneous physical torque diverges by more than the threshold for a set duration, the MCU will instantly throw a hardware `AWD Torque Divergence Fault` shutdown.
 
 **Config Parameters:**
-* `divergence_threshold`: The allowable mismatch in raw ADC current units before flagging a fault (Default: `100`).
+* `divergence_threshold`: The allowable mismatch in raw ADC current units before flagging a fault (Default: `500`). *Note: This is set loosely by default. Even perfectly matched motors will exhibit transient divergence during heavy acceleration ramps due to micro-variations in rotor inertia and flux alignment. You may need to tune this to avoid false-positives while maintaining safety.*
 * `divergence_time`: The duration the mismatch must persist continuously before triggering the MCU shutdown (Default: `0.05` seconds).
 
 ### 4. Asynchronous Telemetry & Host Controls

@@ -8,7 +8,7 @@ class TMC4671Sync:
         self.leader_name = config.get("leader")
         self.follower_name = config.get("follower")
         self.sync_rate = config.getint("sync_rate", 2000, minval=1)
-        self.divergence_threshold = config.getint("divergence_threshold", 100, minval=0)
+        self.divergence_threshold = config.getint("divergence_threshold", 500, minval=0)
         self.divergence_time = config.getfloat("divergence_time", 0.05, minval=0.0)
         
         self.leader = None
