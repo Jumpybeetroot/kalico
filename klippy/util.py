@@ -226,18 +226,30 @@ def get_git_version(from_file=True):
         process = subprocess.Popen(
             prog_desc, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        ver, err = process.communicate()
-        retcode = process.wait()
+        try:
+            ver, err = process.communicate(timeout=3)
+            retcode = process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise Exception("git describe timed out")
+
         if retcode == 0:
             git_info["version"] = str(ver.strip().decode())
             process = subprocess.Popen(
                 prog_status, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
-            stat, err = process.communicate()
-            status = [
-                l.split(None, 1) for l in str(stat.strip().decode()).split("\n")
-            ]
-            retcode = process.wait()
+            try:
+                stat, err = process.communicate(timeout=3)
+                status = [
+                    l.split(None, 1) for l in str(stat.strip().decode()).split("\n")
+                ]
+                retcode = process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                raise Exception("git status timed out")
+
             if retcode == 0:
                 git_info["file_status"] = status
             else:

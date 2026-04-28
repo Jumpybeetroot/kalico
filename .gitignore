@@ -23,3 +23,45 @@ site/
 env/
 venv/
 mkdocs-env/
+
+# agent journals
+journal-*.md
+
+# local project review/testing docs
+/AWD_TESTING*.md
+/STATE_OF_PROJECT*.md
+/PROJECT_REMEDIATION_PLAN*.md
+/kimilist.md
+/*_review.md
+/issues.md
+
+# local agent/editor state
+/.atl/
+/AGENT.md
+/CLAUDE.md
+/GEMINI.md
+/.cursorrules
+/.windsurfrules
+/.cursor/
+/.claude/
+/.codex/
+/.agents/
+/.gemini/
+/.aider*
+/.continue/
+/.roo/
+/.mcp.json
+
+# local runtime logs and scratch configs
+/klippy.log
+/klippy_log*.txt
+/temp_printer.cfg
+/*.local.cfg
+
+# local test/lint caches
+/.pytest_cache/
+/.ruff_cache/
+/.mypy_cache/
+/.coverage
+/coverage.xml
+/htmlcov/

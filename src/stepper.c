@@ -66,6 +66,8 @@ struct stepper {
     uint32_t position;
     struct move_queue_head mq;
     struct trsync_signal stop_signal;
+    volatile int32_t absolute_target_position;
+    int32_t step_dir;
     // gcc (pre v6) does better optimization when uint8_t are bitfields
     uint8_t flags : 8;
 };
@@ -158,6 +160,7 @@ stepper_load_next(struct stepper *s)
     if (m->flags & MF_DIR) {
         s->position = -s->position + m->count;
         gpio_out_toggle_noirq(s->dir_pin);
+        s->step_dir = -s->step_dir;
     } else {
         s->position += m->count;
     }
@@ -178,6 +181,7 @@ stepper_event_edge(struct timer *t)
 {
     struct stepper *s = container_of(t, struct stepper, time);
     gpio_out_toggle_noirq(s->step_pin);
+    s->absolute_target_position += s->step_dir;
     uint32_t count = s->count - 1;
     if (likely(count)) {
         s->count = count;
@@ -204,6 +208,7 @@ stepper_event_avr(struct timer *t)
 {
     struct stepper *s = container_of(t, struct stepper, time);
     gpio_out_toggle_noirq(s->step_pin);
+    s->absolute_target_position += s->step_dir;
     uint16_t *pcount = (void*)&s->count, count = *pcount - 1;
     if (likely(count)) {
         *pcount = count;
@@ -234,6 +239,12 @@ stepper_event_full(struct timer *t)
     uint32_t curtime = timer_read_time();
     uint32_t min_next_time = curtime + s->step_pulse_ticks;
     s->count--;
+
+    // Accumulate the virtual AWD position on the leading edge of the step
+    if ((s->count & 1) || (s->flags & SF_SINGLE_SCHED)) {
+        s->absolute_target_position += s->step_dir;
+    }
+
     if (likely(s->count & 1 && !(s->flags & SF_SINGLE_SCHED)))
         // Schedule unstep event
         goto reschedule_min;
@@ -286,6 +297,8 @@ command_config_stepper(uint32_t *args)
     s->step_pin = gpio_out_setup(args[1], s->flags & SF_INVERT_STEP);
     s->dir_pin = gpio_out_setup(args[2], 0);
     s->position = -POSITION_BIAS;
+    s->absolute_target_position = 0;
+    s->step_dir = 1;
     s->step_pulse_ticks = args[4];
     move_queue_setup(&s->mq, sizeof(struct stepper_move));
     if (HAVE_EDGE_OPTIMIZATION) {
@@ -484,6 +497,21 @@ command_stepper_get_position(uint32_t *args)
     sendf("stepper_position oid=%c pos=%i", oid, position - POSITION_BIAS);
 }
 DECL_COMMAND(command_stepper_get_position, "stepper_get_position oid=%c");
+
+volatile int32_t *awd_absolute_target_position_ptr = NULL;
+
+// Reset the AWD virtual absolute target position to zero
+void
+command_stepper_zero_awd_position(uint32_t *args)
+{
+    uint8_t oid = args[0];
+    struct stepper *s = stepper_oid_lookup(oid);
+    irq_disable();
+    s->absolute_target_position = 0;
+    awd_absolute_target_position_ptr = &s->absolute_target_position;
+    irq_enable();
+}
+DECL_COMMAND(command_stepper_zero_awd_position, "stepper_zero_awd_position oid=%c");
 
 // Stop all moves for a given stepper (caller must disable IRQs)
 static void

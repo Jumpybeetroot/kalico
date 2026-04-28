@@ -1142,6 +1142,10 @@ class CurrentHelper:
     def get_homing_current(self):
         return self.homing_current
     def get_current(self):
+        # Lean path: return cached run_current and skip live ADC reads.
+        # ADC phase currents are available on demand via DUMP_TMC.
+        return self.run_current, MAX_CURRENT, None, None, None
+    def get_live_current(self):
         c = self.convert_adc_current(self._read_field("PID_TORQUE_FLUX_LIMITS"))
         iux = self.convert_adc_current(self._read_field("ADC_IUX"))
         iv = self.convert_adc_current(self._read_field("ADC_IV"))
@@ -1179,11 +1183,16 @@ class CurrentHelper:
 def StepHelper(config, mcu_tmc):
     fields = mcu_tmc.get_fields()
     stepper_name = " ".join(config.get_name().split()[1:])
-    if not config.has_section(stepper_name):
+    follower_stepper_section = "kalico_follower_stepper %s" % (stepper_name,)
+    if config.has_section(stepper_name):
+        sconfig = config.getsection(stepper_name)
+    elif config.has_section(follower_stepper_section):
+        sconfig = config.getsection(follower_stepper_section)
+    else:
         raise config.error(
-            "Could not find config section '[%s]' required by tmc4671 driver"
-            % (stepper_name,))
-    sconfig = config.getsection(stepper_name)
+            "Could not find config section '[%s]' or '[%s]' required by "
+            "tmc4671 driver"
+            % (stepper_name, follower_stepper_section,))
     steps = {1<<i: 1<<i for i in range(0, 16)}
     res = sconfig.getchoice('full_steps_per_rotation', steps, default=8)
     mres = sconfig.getchoice('microsteps', steps, default=256)
@@ -1450,9 +1459,8 @@ class MCU_TMC_SPI:
                     if v == addr:
                         break
                 else:
-                    logging.info("Bypassed address register check for %s" % reg_name)
-                    #raise self.printer.command_error(
-                    #    "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
+                    raise self.printer.command_error(
+                        "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
             read = self.tmc_spi.reg_read(reg)
         return read
     def set_register_once(self, reg_name, val, print_time=None):
@@ -1461,9 +1469,8 @@ class MCU_TMC_SPI:
             if addr is not None:
                 v = self.tmc_spi.reg_write(reg+1, addr, print_time)
                 if v != addr:
-                    logging.info("Bypassed address register check for %s" % reg_name)
-                    #raise self.printer.command_error(
-                    #    "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
+                    raise self.printer.command_error(
+                        "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
             v = self.tmc_spi.reg_write(reg, val, print_time)
     def set_register(self, reg_name, val, print_time=None):
         reg, addr = self.name_to_reg[reg_name]
@@ -1474,16 +1481,14 @@ class MCU_TMC_SPI:
                     if v == addr:
                         break
                 else:
-                    logging.info("Bypassed address register check for %s" % reg_name)
-                    #raise self.printer.command_error(
-                    #    "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
+                    raise self.printer.command_error(
+                        "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
             for retry in range(5):
                 v = self.tmc_spi.reg_write(reg, val, print_time)
                 if v == val:
                     return
-        logging.info("Bypassed register check for %s" % reg_name)
-        #raise self.printer.command_error(
-        #    "Unable to write tmc spi '%s' address register %s (last read %x)" % (self.name, reg_name, v))
+        raise self.printer.command_error(
+            "Unable to write tmc spi '%s' register %s (last read %x)" % (self.name, reg_name, v))
     def get_tmc_frequency(self):
         return self.tmc_frequency
     def read_field(self, field):
@@ -1536,7 +1541,9 @@ class TMC4671:
         self.vm_range = round(32767/1.25)
         # Correct for the OpenFFBoard
         self.voltage_scale = config.getfloat('voltage_scale_ratio', 43.64,
-                                       above=0.)
+                                        above=0.)
+        self.allow_no_motor_current = config.getboolean(
+            'allow_no_motor_current', False)
         self.mcu_tmc = MCU_TMC_SPI(config, Registers, self.fields,
                                    TMC_FREQUENCY, pin_option="cs_pin")
         self.read_translate = None
@@ -1551,8 +1558,6 @@ class TMC4671:
         self.stepper_enable = self.printer.load_object(config, "stepper_enable")
         self.printer.register_event_handler("klippy:mcu_identify",
                                             self._handle_mcu_identify)
-        self.printer.register_event_handler("klippy:connect",
-                                            self._handle_connect)
         # Register commands
         self.step_helper = StepHelper(config, self.mcu_tmc)
         self.current_helper = CurrentHelper(config, self.mcu_tmc)
@@ -1775,6 +1780,10 @@ class TMC4671:
         except self.printer.command_error as e:
             logging.info("TMC %s failed to init: %s", self.name, str(e))
         enable_line.register_state_callback(self._handle_stepper_enable)
+        # Let the MCU command queue fully drain before the next
+        # driver instance starts its own _handle_connect burst.
+        reactor = self.printer.get_reactor()
+        reactor.pause(reactor.monotonic() + 0.250)
 
     def _handle_ready(self, print_time=None):
         # klippy:ready handlers are limited in what they may do. Communicating with a MCU
@@ -1783,6 +1792,7 @@ class TMC4671:
 
     def _handle_ready_deferred(self, print_time=None):
         with self.mutex:
+            reactor = self.printer.get_reactor()
             if print_time is None:
                 print_time = self.printer.lookup_object('toolhead').get_last_move_time()
             # Set these before setting enable to avoid yeeting the toolhead
@@ -1793,6 +1803,8 @@ class TMC4671:
             self._write_field("PID_VELOCITY_TARGET", 0)
             self._write_field("ABN_DECODER_COUNT", 0)
             self._write_field("PID_POSITION_TARGET", 0)
+            # Drain before motor enable + PID tuning
+            reactor.pause(reactor.monotonic() + 0.100)
             # Now enable 6100
             if self.fields6100 is not None:
                 self.mcu_tmc6100.set_register("GCONF",
@@ -1802,6 +1814,8 @@ class TMC4671:
             enable_line.motor_enable(print_time)
             # Just test the PID, as it also sets up the encoder offsets
             P, I = self._tune_flux_pid(True, 1.0, print_time)
+            # Let the MCU command queue drain after PID tuning burst
+            reactor.pause(reactor.monotonic() + 0.250)
             self._write_field("ABN_DECODER_COUNT", 0)
             self._write_field("PID_POSITION_TARGET", 0)
             print_time = self.printer.lookup_object('toolhead').get_last_move_time()
@@ -1815,6 +1829,9 @@ class TMC4671:
             self._write_field("PID_POSITION_TARGET", 0)
             self._write_field("MODE_MOTION", MotionMode.stopped_mode)
             self.init_done = True
+            # Final drain so the next driver's ready phase doesn't
+            # collide with our tail commands.
+            reactor.pause(reactor.monotonic() + 0.250)
 
     def _calibrate_adc(self, print_time):
         self._write_field("PWM_CHOP", 0)
@@ -1906,7 +1923,6 @@ class TMC4671:
     # Align motors and tune PID via a setpoint change experiment
     # See https://folk.ntnu.no/skoge/publications/2012/skogestad-improved-simc-pid/PIDbook-chapter5.pdf
     def _tune_pid(self, X, Kc, derate, offsets, test_existing, print_time):
-        return (0.0, 0.0)
         ch = self.current_helper
         dwell = self.printer.lookup_object('toolhead').dwell
         old_mode = self._read_field("MODE_MOTION")
@@ -1928,36 +1944,50 @@ class TMC4671:
         # Turn on the chopper and wait a bit to measure the resistance
         self._write_field("PWM_CHOP", 7)
         dwell(0.1)
-        c, MAX_I, iux, iv, iwy = self.current_helper.get_current()
+        current = self.current_helper.get_live_current()
+        c, MAX_I, iux, iv, iwy = current
         self._write_field("PWM_CHOP", 0)
-        logging.info("TMC 4671 '%s' initial I %s", self.stepper_name, str(self.current_helper.get_current()))
+        logging.info("TMC 4671 '%s' initial I %s",
+                     self.stepper_name, str(current))
         if max(abs(iux), abs(iwy)) < 1e-6:
-            # something is horribly wrong
-             raise self.printer.command_error("TMC 4671 is seeing no motor current. Check wiring.")
-        # Ok, calculate a voltage that will give us about a third of the configured current limit
-        test2_U = round((c / 2.0) * test_U / max(abs(iux), abs(iwy)))
+            if not self.allow_no_motor_current:
+                raise self.printer.command_error(
+                    "TMC 4671 is seeing no motor current. Check wiring.")
+            logging.warning(
+                "TMC 4671 '%s' saw no motor current; bypassing because "
+                "allow_no_motor_current is set.", self.stepper_name)
+            test2_U = 100
+        else:
+            # Calculate a voltage that gives roughly half the current limit.
+            test2_U = round((c / 2.0) * test_U / max(abs(iux), abs(iwy)))
         logging.info("TMC 4671 '%s' test U %g %g", self.stepper_name, test_U, test2_U)
-        # Switch back on, and this time motor should self-align
-        self._write_field("UD_EXT", test2_U)
+        # Switch back on, and this time motor should self-align smoothly.
+        self._write_field("UD_EXT", 0)
         self._write_field("PWM_CHOP", 7)
-        dwell(0.1)
-        c, MAX_I, iux, iv, iwy = self.current_helper.get_current()
-        logging.info("TMC 4671 '%s' alignment I %s", self.stepper_name, str(self.current_helper.get_current()))
-        test2_U/(self.vm_range/self.voltage_scale)
-        R = test2_U * self.voltage_scale / (self.vm_range * max(abs(iux), abs(iwy)))
+
+        # Smooth 1000ms ramp up to test2_U to pull belts taut without snapping.
+        ramp_steps = 50
+        ramp_time = 1.0
+        for i in range(1, ramp_steps + 1):
+            self._write_field("UD_EXT", round((i / float(ramp_steps)) * test2_U))
+            dwell(ramp_time / ramp_steps)
+
+        current = self.current_helper.get_live_current()
+        c, MAX_I, iux, iv, iwy = current
+        logging.info("TMC 4671 '%s' alignment I %s",
+                     self.stepper_name, str(current))
+        max_i = max(abs(iux), abs(iwy))
+        if max_i < 1e-6:
+            R = 0
+        else:
+            R = test2_U * self.voltage_scale / (self.vm_range * max_i)
         logging.info("TMC 4671 '%s' est. motor R=%g", self.stepper_name, R)
-        for i in range(5):
-            dwell(0.2)
-            self._write_field("PWM_CHOP", 0)
-            # Give it some time to settle
-            dwell(0.1)
-            self._write_field("PWM_CHOP", 7)
-        # Give it some time to settle
+        # Give it some time to settle fully at the final voltage.
         dwell(0.2)
         # Now we should be mechanically aligned
         if offsets:
             # While we're here, set the offsets
-            self._write_field("HALL_PHI_E_OFFSET", -self._read_field("HALL_PHI_E")%65536),
+            self._write_field("HALL_PHI_E_OFFSET", -self._read_field("HALL_PHI_E")%65536)
             self._write_field("ABN_DECODER_COUNT", 0)
             self._write_field("ABN_DECODER_PHI_E_OFFSET", 0)
         self._write_field("MODE_MOTION", MotionMode.stopped_mode)
@@ -2084,7 +2114,14 @@ class TMC4671:
                     continue
                 val = self.fields.registers[reg_name] # Val may change during loop
                 self.mcu_tmc.set_register(reg_name, val, print_time)
+            # Pause to let the MCU command queue drain after the bulk
+            # register dump.  Without this, dual-driver setups overflow
+            # the scheduler's 1ms timing budget.
+            reactor = self.printer.get_reactor()
+            reactor.pause(reactor.monotonic() + 0.100)
             self._calibrate_adc(print_time)
+            # Another drain pause after ADC calibration
+            reactor.pause(reactor.monotonic() + 0.100)
             self._setup_filters()
 
     def _setup_filter(self, register: str, biquad_filter: BiquadFilter) -> None:
@@ -2122,15 +2159,9 @@ class TMC4671:
     def get_status(self, eventtime=None):
         if not self.init_done:
             return {}
-        current = self.current_helper.get_current()
-        res = {'run_current': current[0],
-               'current_ux': current[2],
-               'current_v': current[3],
-               'current_wy': current[4],
-               }
-        for reg_name in DumpGroups["monitor"]:
-            val = self.mcu_tmc.get_register(reg_name)
-            self.monitor_data.update(self.fields.get_reg_fields(reg_name, val))
+        # Lean: no SPI on the status poll path. run_current is cached;
+        # live phase currents and monitor regs are available via DUMP_TMC.
+        res = {'run_current': self.current_helper.get_run_current()}
         res.update(self.monitor_data)
         res.update(self.error_helper.get_status(eventtime))
         return res

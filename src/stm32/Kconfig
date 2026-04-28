@@ -274,6 +274,7 @@ config RAM_SIZE
 
 config STACK_SIZE
     int
+    default 1024 if MACH_STM32H7
     default 512
 
 config STM32F103GD_DISABLE_SWD

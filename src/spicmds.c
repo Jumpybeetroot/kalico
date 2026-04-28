@@ -103,14 +103,19 @@ spidev_get_cs_pin(struct spidev_s *spi)
     return spi->pin;
 }
 
+volatile uint8_t kalico_spi_active = 0;
+
 void
 spidev_transfer(struct spidev_s *spi, uint8_t receive_data
                 , uint8_t data_len, uint8_t *data)
 {
+    kalico_spi_active++;
     uint_fast8_t flags = spi->flags;
-    if (!(flags & (SF_SOFTWARE|SF_HARDWARE)))
+    if (!(flags & (SF_SOFTWARE|SF_HARDWARE))) {
         // Not yet initialized
+        kalico_spi_active--;
         return;
+    }
 
     if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
         spi_software_prepare(spi->spi_software);
@@ -128,14 +133,19 @@ spidev_transfer(struct spidev_s *spi, uint8_t receive_data
 
     if (flags & SF_HAVE_PIN)
         gpio_out_write(spi->pin, !(flags & SF_CS_ACTIVE_HIGH));
+
+    kalico_spi_active--;
 }
 
 void
 spidev_transfer_tmc4671_read(struct spidev_s *spi, uint8_t *data)
 {
+    kalico_spi_active++;
     uint_fast8_t flags = spi->flags;
-    if (!(flags & (SF_SOFTWARE|SF_HARDWARE)))
+    if (!(flags & (SF_SOFTWARE|SF_HARDWARE))) {
+        kalico_spi_active--;
         return;
+    }
 
     if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
         spi_software_prepare(spi->spi_software);
@@ -154,7 +164,7 @@ spidev_transfer_tmc4671_read(struct spidev_s *spi, uint8_t *data)
     // 500ns delay after address byte for high-speed reads (datasheet >2MHz)
     uint32_t end = timer_read_time() + (timer_from_us(1) / 2);
     while (timer_is_before(timer_read_time(), end))
-        irq_poll(); // Allow other interrupts while waiting
+        asm volatile ("nop");
 
     // Receive the 4 bytes of data
     if (CONFIG_WANT_SOFTWARE_SPI && flags & SF_SOFTWARE)
@@ -164,6 +174,8 @@ spidev_transfer_tmc4671_read(struct spidev_s *spi, uint8_t *data)
 
     if (flags & SF_HAVE_PIN)
         gpio_out_write(spi->pin, !(flags & SF_CS_ACTIVE_HIGH));
+
+    kalico_spi_active--;
 }
 
 void
